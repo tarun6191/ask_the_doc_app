@@ -1,124 +1,56 @@
 import streamlit as st
-import pandas as pd
-import numpy as np
-import pickle
-import base64
+from langchain.llms import OpenAI
+from langchain.text_splitter import CharacterTextSplitter
+from langchain.embeddings import OpenAIEmbeddings
+from langchain.vectorstores import Chroma
+from langchain.chains import RetrievalQA
 
+def generate_response(uploaded_file, openai_api_key, query_text):
+    # Load document if file is uploaded
+    if uploaded_file is not None:
+        documents = [uploaded_file.read().decode()]
+        
+        # Split documents into chunks
+        text_splitter = CharacterTextSplitter(chunk_size=1000, chunk_overlap=0)
+        texts = text_splitter.create_documents(documents)
+        
+        # Select embeddings
+        embeddings = OpenAIEmbeddings(openai_api_key=openai_api_key)
+        
+        # Create a vectorstore from documents
+        db = Chroma.from_documents(texts, embeddings)
+        
+        # Create retriever interface
+        retriever = db.as_retriever()
+        
+        # Create QA chain
+        qa = RetrievalQA.from_chain_type(
+            llm=OpenAI(openai_api_key=openai_api_key),
+            chain_type='stuff', 
+            retriever=retriever
+        )
+        return qa.run(query_text)
 
+# Page title
+st.set_page_config(page_title='🦜🔗 Ask the Doc App')
+st.title('🦜🔗 Ask the Doc App')
 
-@st.cache(suppress_st_warning=True)
-def get_fvalue(val):
-    feature_dict = {"No":1,"Yes":2}
-    for key,value in feature_dict.items():
-        if val == key:
-            return value
+# File upload
+uploaded_file = st.file_uploader('Upload an article', type='txt')
 
-def get_value(val,my_dict):
-    for key,value in my_dict.items():
-        if val == key:
-            return value
-       
-app_mode = st.sidebar.selectbox('Select Page',['Home','Prediction'])
-if app_mode=='Home':
-    st.title('LOAN PREDICTION :')
-    st.image('loan_image.jpg') 
-    st.write('@DSU for learning purposes only') 
-   
-   
-   
-elif app_mode =='Prediction':
-    
-    csv=pd.read_csv("train.csv")
-    st.write(csv)
+# Query text
+query_text = st.text_input('Enter your question:', placeholder='Please provide a short summary.', disabled=not uploaded_file)
 
-    #st.image('slider-short-3.jpg')
+# Form input and query
+result = []
+with st.form('myform', clear_on_submit=True):
+    openai_api_key = st.text_input('OpenAI API Key', type='password', disabled=not (uploaded_file and query_text))
+    submitted = st.form_submit_button('Submit', disabled=not(uploaded_file and query_text))
+    if submitted and openai_api_key.startswith('sk-'):
+        with st.spinner('Calculating...'):
+            response = generate_response(uploaded_file, openai_api_key, query_text)
+            result.append(response)
+        del openai_api_key
 
-    st.subheader('Sir/Mme , YOU need to fill all neccesary informations in order to get a reply to your loan request !')
-    st.sidebar.header("Informations about the client :")
-    gender_dict = {"Male":1,"Female":2}
-    feature_dict = {"No":1,"Yes":2}
-    edu={'Graduate':1,'Not Graduate':2}
-    prop={'Rural':1,'Urban':2,'Semiurban':3}
-    Gender=st.sidebar.radio('Gender',tuple(gender_dict.keys()))
-    Married=st.sidebar.radio('Married',tuple(feature_dict.keys()))
-    Self_Employed=st.sidebar.radio('Self Employed',tuple(feature_dict.keys()))
-    Dependents=st.sidebar.radio('Dependents',options=['0','1' , '2' , '3+'])
-    Education=st.sidebar.radio('Education',tuple(edu.keys()))
-    ApplicantIncome=st.sidebar.slider('ApplicantIncome',0,10000,0,)
-    CoapplicantIncome=st.sidebar.slider('CoapplicantIncome',0,10000,0,)
-    LoanAmount=st.sidebar.slider('LoanAmount in K$',9.0,700.0,200.0)
-    Loan_Amount_Term=st.sidebar.selectbox('Loan_Amount_Term',(12.0,36.0,60.0,84.0,120.0,180.0,240.0,300.0,360.0))
-    Credit_History=st.sidebar.radio('Credit_History',(0.0,1.0))
-    Property_Area=st.sidebar.radio('Property_Area',tuple(prop.keys()))
-
-
-    class_0 , class_3 , class_1,class_2 = 0,0,0,0
-    if Dependents == '0':
-        class_0 = 1
-    elif Dependents == '1':
-        class_1 = 1
-    elif Dependents == '2' :
-        class_2 = 1
-    else:
-        class_3= 1
-
-    Rural,Urban,Semiurban=0,0,0
-    if Property_Area == 'Urban' :
-        Urban = 1
-    elif Property_Area == 'Semiurban' :
-        Semiurban = 1
-    else :
-        Rural=1
-   
-    data1={
-    'Gender':Gender,
-    'Married':Married,
-    'Dependents':[class_0,class_1,class_2,class_3],
-    'Education':Education,
-    'ApplicantIncome':ApplicantIncome,
-    'CoapplicantIncome':CoapplicantIncome,
-    'Self Employed':Self_Employed,
-    'LoanAmount':LoanAmount,
-    'Loan_Amount_Term':Loan_Amount_Term,
-    'Credit_History':Credit_History,
-    'Property_Area':[Rural,Urban,Semiurban],
-    }
-
-    feature_list=[ApplicantIncome,CoapplicantIncome,LoanAmount,Loan_Amount_Term,Credit_History,get_value(Gender,gender_dict),get_fvalue(Married),data1['Dependents'][0],data1['Dependents'][1],data1['Dependents'][2],data1['Dependents'][3],get_value(Education,edu),get_fvalue(Self_Employed),data1['Property_Area'][0],data1['Property_Area'][1],data1['Property_Area'][2]]
-
-    single_sample = np.array(feature_list).reshape(1,-1)
-
-    if st.button("Predict"):
-        file_ = open("6m-rain.gif", "rb")
-        contents = file_.read()
-        data_url = base64.b64encode(contents).decode("utf-8")
-        file_.close()
-   
-        file = open("green-cola-no.gif", "rb")
-        contents = file.read()
-        data_url_no = base64.b64encode(contents).decode("utf-8")
-        file.close()
-   
-   
-        loaded_model = pickle.load(open('RF.sav', 'rb'))
-        prediction = loaded_model.predict(single_sample)
-        if prediction[0] == 0 :
-            st.error(
-    'According to our Calculations, you will not get the loan from Bank'
-    )
-            st.markdown(
-    f'<img src="data:image/gif;base64,{data_url_no}" alt="cat gif">',
-    unsafe_allow_html=True,)
-        elif prediction[0] == 1 :
-            st.success(
-    'Congratulations!! you will get the loan from Bank'
-    )
-            st.markdown(
-    f'<img src="data:image/gif;base64,{data_url}" alt="cat gif">',
-    unsafe_allow_html=True,
-    )
-
-
-
-
-
+if len(result):
+    st.info(response)
